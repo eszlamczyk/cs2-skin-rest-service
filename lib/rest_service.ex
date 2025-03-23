@@ -204,6 +204,104 @@ defmodule RestService do
     end
   end
 
+  def sticker_map_to_html(sticker_map, start_index, end_index) do
+    begining = """
+    <!DOCTYPE html>
+    <html lang="pl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Formularz broni</title>
+    </head>
+    <body>
+    <header style="position: fixed; top: 0; left: 0; width: 100%; z-index: 99; background-color:gray; padding: 15px;">
+      <h1>Found #{length(sticker_map)} stickers between #{start_index} and #{end_index} !!</h1>
+      <button onclick="window.location.href=`/home`;">
+          Go back to the front
+      </button>
+    </header>
+    <ul style="margin-top: 200px">\n
+    """
+
+    sticker_map
+    |> Enum.map(&sticker_record_to_html(&1))
+    |> Enum.join("\n")
+    |> (&(begining <> &1 <> "\n</ul>\n</body>")).()
+  end
+
+  def sticker_record_to_html(record) do
+    """
+    <li>
+      <h3> #{record["name"]} </h3>
+      <img src='#{record["image"]}' alt='image'/>
+      <p>Type: #{record["type"]}</p>
+    </li>
+    """
+  end
+
+  def get_stickers(conn, start_index, end_index) do
+    if start_index > end_index or end_index > 7984 or start_index < 0 do
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        # yes
+        418,
+        Jason.encode!(%{"error" => "Invalid range"})
+      )
+    end
+
+    client = SkinAPI1.client()
+
+    case SkinAPI1.fetch_stickers(client) do
+      {:ok, stickers} ->
+        filtered_stickers =
+          stickers
+          |> Enum.map(
+            &Map.drop(
+              &1,
+              [
+                "id",
+                "description",
+                "rarity",
+                "crates"
+              ]
+            )
+          )
+          |> Enum.slice(start_index..end_index)
+
+        conn
+        |> put_resp_content_type("text/html")
+        |> send_resp(
+          200,
+          sticker_map_to_html(filtered_stickers, start_index, end_index)
+        )
+
+      {:error, reason} ->
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(
+          500,
+          Jason.encode!(%{"error" => "Failed to fetch skins", "reason" => reason})
+        )
+    end
+  end
+
+  get "/v1/stickers/:from/:to" do
+    case Integer.parse(conn.params["from"]) do
+      {start_index, _rest} ->
+        case Integer.parse(conn.params["to"]) do
+          {end_index, _rest} ->
+            get_stickers(conn, start_index, end_index)
+
+          :error ->
+            send_resp(conn, 404, "Endpoint Not found")
+        end
+
+      :error ->
+        send_resp(conn, 404, "Endpoint Not found")
+    end
+  end
+
   get "/v1/weapon/:weapon_type/:num" when num in ~w(all) do
     weapon_type = conn.path_params["weapon_type"]
 
@@ -249,6 +347,17 @@ defmodule RestService do
 
                 const url = `/v1/weapon/${weaponType}/${numParam}`;
                 window.location.href = url;
+              };
+
+              function submitStickerForm() {
+                const start_index = document.getElementById("start_index").value;
+                const end_index = document.getElementById("end_index").value;
+
+                const start_param = start_index.trim() === "" || isNaN(start_index) ? "10" : start_index;
+                const end_param = end_index.trim() === "" || isNaN(end_index) ? String(parseInt(start_param) + 10) : end_index;
+
+                const url = `/v1/stickers/${start_param}/${end_param}`;
+                window.location.href = url;
               }
             </script>
       </head>
@@ -264,6 +373,17 @@ defmodule RestService do
           <label for="num">Liczba rekordów:</label>
           <input type="text" id="num" name="num" placeholder="np. 10 lub 'all'"><br><br>
 
+          <input type="submit" value="Wyślij">
+        </form>
+
+        <br><hr><br>
+        <h2>If you want to look at Stickers instead:</h2>
+        <form onsubmit="event.preventDefault(); submitStickerForm();">
+          <label for="start_index">Od:</label>
+          <input type="text" id="start_index" name="start_index" placeholder="np. 69">
+          <label for="end_index">Do:</label>
+          <input type="text" id="end_index" name="end_index" placeholder="np. 420">
+          <br>
           <input type="submit" value="Wyślij">
         </form>
       </body>

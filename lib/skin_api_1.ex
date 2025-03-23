@@ -13,4 +13,12 @@ defmodule SkinAPI1 do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  def fetch_stickers(client) do
+    case Tesla.get(client, "/stickers.json") do
+      {:ok, %Tesla.Env{status: 200, body: body}} -> {:ok, body}
+      {:ok, %Tesla.Env{status: status}} -> {:error, "HTTP error: #{status}"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 end
